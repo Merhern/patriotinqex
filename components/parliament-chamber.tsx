@@ -7,15 +7,14 @@ import { PartyProfile } from "@/components/party-profile";
 import { TwitterFeed } from "@/components/twitter-feed";
 import { CompareView } from "@/components/compare-view";
 import {
-  PARTIES,
-  generatePoliticians,
   generateSeatPositions,
-  loadFromApi,
-  mergeApiData,
   getAge,
   type Politician,
   type Party,
-} from "@/lib/parliament-data";
+} from "@/lib/parliament-data"; // Odebral PARTIES - nahradíme dynamickými
+
+// Přidáno MK, načítá API
+import { fetchPoliticians, fetchParties } from "@/lib/api-loader"; // Přidána fetchParties
 
 function SocialLinks() {
   return (
@@ -33,20 +32,7 @@ function SocialLinks() {
   );
 }
 
-const PARTY_COLORS: Record<string, string> = {
-  SPD: "#2563eb",
-  Motoriste: "#f97316",
-  ANO: "#6d28d9",
-  ODS: "#0ea5e9",
-  "KDU-CSL": "#eab308",
-  "TOP 09": "#a855f7",
-  STAN: "#22c55e",
-  Pirati: "#5a6577",
-};
-
-function getColor(partyName: string) {
-  return PARTY_COLORS[partyName] || "#666666";
-}
+// Odebral PARTY_COLORS - barvy načteme z API
 
 // Get initials: "Lucie Kucerova" -> "LK"
 function getInitials(name: string): string {
@@ -72,15 +58,18 @@ function createWedgeMapping(
   return mapping;
 }
 
+
 // Search component for finding politicians
 function PoliticianSearch({
   politicians,
   onHover,
   onSelect,
+  getColor,
 }: {
   politicians: Politician[];
   onHover: (polIndex: number | null) => void;
   onSelect: (polIndex: number) => void;
+  getColor: (partyShort: string) => string;
 }) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
@@ -168,7 +157,7 @@ function PoliticianSearch({
                 setFocused(false);
               }}
             >
-              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: getColor(pol.party) }} />
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: getColor(pol.shortParty) }} />
               <span className="text-sm text-foreground truncate">{pol.name}</span>
               <span className="text-xs font-mono text-muted-foreground uppercase text-right">{pol.shortParty}</span>
               <span className="text-xs font-bold font-mono text-right" style={{ color: pol.score >= 1200 ? "#22c55e" : pol.score >= 900 ? "#eab308" : "#ef4444" }}>
@@ -186,31 +175,32 @@ type FilterType = "strany" | "kraje" | "vek" | "pohlavi";
 
 const AGE_BRACKETS: { key: string; label: string; min: number; max: number }[] = [
   { key: "under30", label: "Do 30 let", min: 0, max: 29 },
-  { key: "30-40", label: "30\u201340 let", min: 30, max: 40 },
-  { key: "40-50", label: "40\u201350 let", min: 41, max: 50 },
-  { key: "50plus", label: "50+ let", min: 51, max: 200 },
+  { key: "30-42", label: "30\u201342 let", min: 30, max: 42 },
+  { key: "43-55", label: "43\u201355 let", min: 43, max: 55 },   // ← opraveno
+  { key: "56-68", label: "56-68 let", min: 56, max: 68 },
+  { key: "69+", label: "Nad 68 let", min: 69, max: 100 },
 ];
 
 const GENDER_OPTIONS: { key: string; label: string }[] = [
-  { key: "male", label: "Mu\u017ei" },
-  { key: "female", label: "\u017deny" },
+  { key: "Muž", label: "Mu\u017ei" },
+  { key: "Žena", label: "\u017deny" },
 ];
 
 const REGIONS: { key: string; label: string }[] = [
-  { key: "Praha", label: "Praha" },
-  { key: "St\u0159edo\u010desk\u00fd kraj", label: "St\u0159edo\u010desk\u00fd" },
-  { key: "Jiho\u010desk\u00fd kraj", label: "Jiho\u010desk\u00fd" },
-  { key: "Plze\u0148sk\u00fd kraj", label: "Plze\u0148sk\u00fd" },
-  { key: "Karlovarsk\u00fd kraj", label: "Karlovarsk\u00fd" },
-  { key: "\u00dasteck\u00fd kraj", label: "\u00dasteck\u00fd" },
-  { key: "Libereck\u00fd kraj", label: "Libereck\u00fd" },
-  { key: "Kr\u00e1lov\u00e9hradeck\u00fd kraj", label: "Kr\u00e1lov\u00e9hr." },
-  { key: "Pardubick\u00fd kraj", label: "Pardubick\u00fd" },
-  { key: "Kraj Vyso\u010dina", label: "Vyso\u010dina" },
-  { key: "Jihomoravsk\u00fd kraj", label: "Jihomoravsk\u00fd" },
-  { key: "Olomouck\u00fd kraj", label: "Olomouck\u00fd" },
-  { key: "Zl\u00ednsk\u00fd kraj", label: "Zl\u00ednsk\u00fd" },
-  { key: "Moravskoslezsk\u00fd kraj", label: "Moravskoslez." },
+  { key: "Hl. m. Praha", label: "Praha" },
+  { key: "Středočeský", label: "Středočeský" },
+  { key: "Jihočeský", label: "Jihočeský" },
+  { key: "Plzeňský", label: "Plzeňský" },
+  { key: "Karlovarský", label: "Karlovarský" },
+  { key: "Ústecký", label: "Ústecký" },
+  { key: "Liberecký", label: "Liberecký" },
+  { key: "Královéhradecký", label: "Královéhr." },
+  { key: "Pardubický", label: "Pardubický" },
+  { key: "Vysočina", label: "Vysočina" },
+  { key: "Jihomoravský", label: "Jihomoravský" },
+  { key: "Olomoucký", label: "Olomoucký" },
+  { key: "Zlínský", label: "Zlínský" },
+  { key: "Moravskoslezský", label: "Moravskoslez." },
 ];
 
 interface ParliamentChamberProps {
@@ -240,20 +230,49 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
   const faqRef = useRef<HTMLDivElement>(null);
   const schematicRef = useRef<HTMLDivElement>(null);
 
-  const basePoliticians = useMemo(() => generatePoliticians(), []);
-  const [apiMerged, setApiMerged] = useState<Politician[] | null>(null);
 
-  // Try to load real names from API on mount
-  useEffect(() => {
-    loadFromApi().then((data) => {
-      if (data && data.politicians.length > 0) {
-        const merged = mergeApiData(basePoliticians, data.politicians);
-        setApiMerged(merged);
-      }
-    }).catch(() => { /* fallback to generated */ });
-  }, [basePoliticians]);
+const [politicians, setPoliticians] = useState<Politician[]>([]);
+const [parties, setParties] = useState<Party[]>([]);
+const [isLoading, setIsLoading] = useState(true);
+const [loadingError, setLoadingError] = useState<string | null>(null); // Error handling
 
-  const politicians = apiMerged || basePoliticians;
+useEffect(() => {
+  const loadData = async () => {
+    try {
+      const [pols, parts] = await Promise.all([fetchPoliticians(), fetchParties()]);
+
+      // === ČIŠTĚNÍ DAT (odstraní \u200b a mezery) ===
+      const cleanedPols = pols.map((p) => ({
+        ...p,
+        region: (p.region || "").replace(/\u200b/g, "").trim(),
+        gender: (p.gender || "").trim(),
+      }));
+
+      const sortedPols = [...cleanedPols].sort((a, b) => {   // ← non-mutating
+        if (a.shortParty !== b.shortParty) {
+          return a.shortParty.localeCompare(b.shortParty, 'cs');
+        }
+        return a.name.localeCompare(b.name, 'cs');
+      });
+
+      setPoliticians(sortedPols || []);
+      setParties(parts || []);
+      setIsLoading(false);
+    } catch (err) {
+      console.error("Chyba při načítání dat:", err);
+      setLoadingError("Nepodařilo se načíst data. Zkuste to později.");
+      setIsLoading(false);
+    }
+  };
+  loadData();
+}, []);
+
+
+const getColor = useCallback((partyShort: string) => {
+    const party = parties.find(p => p.shortName === partyShort);
+    return party ? party.color : "#666666";
+  }, [parties]);
+
   const seatPositions = useMemo(() => generateSeatPositions(politicians.length), [politicians]);
   const wedgeMapping = useMemo(() => createWedgeMapping(seatPositions, politicians), [seatPositions, politicians]);
 
@@ -284,13 +303,14 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
     setTooltipPos({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const activeParties = PARTIES.filter((p) => p.seats > 0);
+  const activeParties = useMemo(() => parties.filter((p) => p.seats > 0), [parties]); // Dynamické activeParties z API
+
   const hasAnySelection = selectedParty !== null || selectedPolitician !== null;
 
   // Seat radius -- slightly smaller for more breathing room, keep letters same size
   const seatRadius = 2.9;
 
-  const showProfile = useCallback((cb: () => void) => {
+    const showProfile = useCallback((cb: () => void) => {
     setProfileClosing(false);
     setProfileVisible(false);
     cb();
@@ -322,26 +342,26 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
   }, [hideProfile]);
 
   const handlePartyClick = useCallback(
-    (partyName: string) => {
+    (partyShort: string) => { // Používáme short pro konzistenci
       if (compareMode && compareLeft) {
         if (compareLeft.type === "party") {
-          const party = PARTIES.find((p) => p.name === partyName);
+          const party = parties.find((p) => p.shortName === partyShort);
           if (party) setCompareRight({ type: "party", data: party });
         }
         return;
       }
-      if (selectedParty === partyName && selectedPartyProfile) {
+      if (selectedParty === partyShort && selectedPartyProfile) {
         clearAll();
       } else {
         showProfile(() => {
-          setSelectedParty(partyName);
+          setSelectedParty(partyShort);
           setSelectedPolitician(null);
-          const party = PARTIES.find((p) => p.name === partyName);
+          const party = parties.find((p) => p.shortName === partyShort);
           if (party) setSelectedPartyProfile(party);
         });
       }
     },
-    [selectedParty, selectedPartyProfile, showProfile, clearAll, compareMode, compareLeft],
+    [selectedParty, selectedPartyProfile, showProfile, clearAll, compareMode, compareLeft, parties],
   );
 
   const handleSeatClick = useCallback(
@@ -355,7 +375,7 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
         return;
       }
       showProfile(() => {
-        setSelectedParty(politician.party);
+        setSelectedParty(politician.shortParty); // Používáme shortParty
         setSelectedPolitician(politician);
         setSelectedPartyProfile(null);
       });
@@ -403,15 +423,15 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
     faqRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
-  const handleGoToParty = useCallback((partyName: string) => {
+  const handleGoToParty = useCallback((partyShort: string) => {
     if (compareMode) exitCompare();
     showProfile(() => {
-      setSelectedParty(partyName);
+      setSelectedParty(partyShort);
       setSelectedPolitician(null);
-      const party = PARTIES.find((p) => p.name === partyName);
+      const party = parties.find((p) => p.shortName === partyShort);
       if (party) setSelectedPartyProfile(party);
     });
-  }, [showProfile, compareMode, exitCompare]);
+  }, [showProfile, compareMode, exitCompare, parties]);
 
   const showTwitter = selectedPartyProfile && !selectedPolitician;
 
@@ -420,13 +440,13 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
 
   const isSeatFaded = useCallback((pol: Politician) => {
     if (compareMode && compareLeft?.type === "party") {
-      const leftName = (compareLeft.data as Party).name;
-      const rightName = compareRight?.type === "party" ? (compareRight.data as Party).name : null;
-      if (pol.party === leftName) return false;
-      if (rightName && pol.party === rightName) return false;
+      const leftName = (compareLeft.data as Party).shortName; // Používáme short
+      const rightName = compareRight?.type === "party" ? (compareRight.data as Party).shortName : null;
+      if (pol.shortParty === leftName) return false;
+      if (rightName && pol.shortParty === rightName) return false;
       return true;
     }
-    if (selectedParty !== null && pol.party !== selectedParty) return true;
+    if (selectedParty !== null && pol.shortParty !== selectedParty) return true;
     if (selectedRegion !== null && pol.region !== selectedRegion) return true;
     if (selectedGender !== null && pol.gender !== selectedGender) return true;
     if (selectedAge !== null) {
@@ -469,6 +489,10 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
     if (y + tooltipH > window.innerHeight - 8) y = window.innerHeight - tooltipH - 8;
     return { position: "fixed" as const, left: x, top: y, zIndex: 9999, pointerEvents: "none" as const };
   };
+
+  if (loadingError) {
+    return <div className="p-4 text-red-500">{loadingError}</div>; // Error zpráva
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -530,9 +554,9 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
                   {"V\u0161echny"}
                 </button>
                 {activeParties.map((party) => (
-                  <button type="button" key={party.name} onClick={() => handlePartyClick(party.name)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono uppercase tracking-wider transition-all ${selectedParty === party.name ? "bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground border border-border"}`}>
-                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: getColor(party.name), border: "1px solid hsl(var(--foreground) / 0.3)" }} />
+                  <button type="button" key={party.shortName} onClick={() => handlePartyClick(party.shortName)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono uppercase tracking-wider transition-all ${selectedParty === party.shortName ? "bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground border border-border"}`}>
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: party.color, border: "1px solid hsl(var(--foreground) / 0.3)" }} />
                     {party.shortName}
                     <span className="opacity-60">{party.seats}</span>
                   </button>
@@ -598,6 +622,7 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
             if (idx !== null) setTooltipPos(null);
           }}
           onSelect={(idx) => handleSeatClick(idx)}
+	  getColor={getColor}
         />
         {/* Centered text -- flows naturally to avoid overlap */}
         <p className="text-xs font-mono text-muted-foreground text-center pointer-events-none hidden sm:block">
@@ -612,8 +637,16 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
 
       {/* Chamber SVG */}
       <div className="flex-1 flex flex-col items-center justify-center p-3 md:p-4 relative parliament-chamber-bg" onMouseMove={handleMouseMove}>
-        <div ref={schematicRef} className="w-full max-w-[1900px] mx-auto" style={{ aspectRatio: "2.1 / 1" }}>
-          <svg ref={svgRef} viewBox="-2 -2 104 100" className="w-full h-full" aria-label="Rozlo\u017een\u00ed Poslaneck\u00e9 sn\u011bmovny">
+
+      {isLoading ? (
+          <div className="flex flex-col items-center justify-center h-[520px] gap-4">
+            <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+            <p className="text-muted-foreground font-mono text-sm">Načítám poslance z API...</p>
+          </div>
+        ) : (
+
+          <div ref={schematicRef} className="w-full max-w-[1900px] mx-auto" style={{ aspectRatio: "2.1 / 1" }}>
+          <svg ref={svgRef} viewBox="-2 -2 104 100" className="w-full h-full" aria-label="Rozlo\u027een\u00ed Poslaneck\u00e9 sn\u011bmovny">
             {politicians.map((pol, polIndex) => {
               const seatIdx = wedgeMapping[polIndex];
               const seat = seatPositions[seatIdx];
@@ -626,7 +659,7 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
               const isCompareRight = compareRightPolId === pol.id;
               const isHighlighted = isSelected || isCompareLeft || isCompareRight || isHovered;
               const r = isHighlighted ? seatRadius * 1.15 : seatRadius;
-              const color = getColor(pol.party);
+              const color = getColor(pol.shortParty); // Používáme dynamickou barvu
               const fadedOpacity = faded ? 0.4 : 1;
               const initials = getInitials(pol.name);
 
@@ -697,6 +730,7 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
             })}
           </svg>
         </div>
+    )}
 
         {/* Selection/compare controls below schematic */}
         <div className="flex items-center justify-center gap-3 py-3" style={{ minHeight: "44px" }}>
@@ -728,14 +762,14 @@ export function ParliamentChamber({ onBack, onGoToLaws }: ParliamentChamberProps
             return (
               <div className="bg-card border border-border px-4 py-3 shadow-2xl min-w-[240px]">
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="w-11 h-11 rounded-full overflow-hidden border-2 flex-shrink-0 bg-secondary" style={{ borderColor: getColor(pol.party) }}>
-                    <img src={pol.imageUrl || "/placeholder.svg"} alt="" className="w-full h-full object-cover" crossOrigin="anonymous" />
+                  <div className="w-11 h-11 rounded-full overflow-hidden border-2 flex-shrink-0 bg-secondary" style={{ borderColor: getColor(pol.shortParty) }}>
+			<img src={pol.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   </div>
                   <div>
                     <div className="text-sm font-bold text-foreground">{pol.name}</div>
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getColor(pol.party) }} />
-                      <span className="text-xs font-mono text-muted-foreground uppercase">{pol.party}</span>
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getColor(pol.shortParty) }} />
+                      <span className="text-xs font-mono text-muted-foreground uppercase">{pol.shortParty}</span>
                     </div>
                   </div>
                 </div>

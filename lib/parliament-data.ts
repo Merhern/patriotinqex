@@ -43,18 +43,46 @@ export interface Party {
   founded: number;
 }
 
-// Helper: compute age from birth date string "DD.MM.YYYY"
-export function getAge(birthDate: string): number {
-  const parts = birthDate.split(".");
-  if (parts.length < 3) return 0;
-  const d = parseInt(parts[0], 10);
-  const m = parseInt(parts[1], 10) - 1;
-  const y = parseInt(parts[2], 10);
-  const born = new Date(y, m, d);
+
+// Helper: compute age from birth date (podporuje YYYY, DD.MM.YYYY, YYYY-MM-DD)
+export function getAge(birthDate: string | number | undefined): number {
+  if (!birthDate) return 0;
+
+  const str = String(birthDate).trim().replace(/\u200b/g, "");
+
+  let birth: Date;
+
+  if (/^\d{4}$/.test(str)) {
+    // Pouze rok (nejčastější případ z API)
+    birth = new Date(parseInt(str, 10), 0, 1);
+  } else if (str.includes(".")) {
+    // DD.MM.YYYY
+    const parts = str.split(".");
+    if (parts.length >= 3) {
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const y = parseInt(parts[2], 10);
+      birth = new Date(y, m, d);
+    } else {
+      return 0;
+    }
+  } else {
+    // YYYY-MM-DD nebo cokoli jiného
+    birth = new Date(str);
+  }
+
+  if (isNaN(birth.getTime())) return 0;
+
+  // === CHYBĚJÍCÍ ČÁST – výpočet věku ===
   const now = new Date();
-  let age = now.getFullYear() - born.getFullYear();
-  if (now.getMonth() < m || (now.getMonth() === m && now.getDate() < d)) age--;
-  return age;
+  let age = now.getFullYear() - birth.getFullYear();
+
+  const monthDiff = now.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birth.getDate())) {
+    age--;
+  }
+
+  return Math.max(0, age);
 }
 
 // Order determines wedge placement: left-to-right in the semicircle
