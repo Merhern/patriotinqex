@@ -1,6 +1,6 @@
 PATRIOT INDEX - DOCUMENT STRUCTURE
 ====================================
-
+MUJ COMMIT
 This file explains the hierarchy and architecture of the Patriot Index website.
 
 
